@@ -71,6 +71,7 @@ tools = [
     path('gpa_calculator', gpa_calculator, name='gpa_calculator'),
     path('get_subject', get_subject, name='get_subject'),
     path('Code_scriping', Code_scriping, name='Code_scriping'),
+    path('Code_scriping', Code_scriping, name='Code_scriping'),
 ]
 alternative_url = [path('student/video_meeting', meeting),
                    path('student/class_room', home_classroom),

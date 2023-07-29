@@ -14,7 +14,10 @@ def parent_class_list(request,roll_no):
     classes = class_enrolled.objects.filter(user_id=stu_id)
     room_list = []
     for i in classes:
-        room_list.append(ClassRooms.objects.get(subject_code=i.subject_code))
+        try:
+            room_list.append(ClassRooms.objects.get(subject_code=i.subject_code))
+        except:
+            return (request,'msg/doesnt_enroll_class.html')
             # return render(request,'parent/parent_home.html',{'role_no':role_no,'std':obj})
         
     return render(request,'parent/class_list.html',{'classes':room_list,'roll_no':roll_no})
