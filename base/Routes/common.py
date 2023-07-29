@@ -1,284 +1,430 @@
-import random
-import time
-import json
+import pywhatkit as kit
+from django.conf import settings
+from django.shortcuts import render
+from googletrans import Translator, LANGUAGES
+from django.http import HttpResponse
+from gtts import gTTS
+from langdetect import detect
+import os
+import io
+from LMS.settings import BASE_DIR
+import wikipedia
+from docx2pdf import convert
+from django.core.files.storage import default_storage
+from pdf2docx import parse
+import tabula
+import pandas as pd
+from openpyxl import load_workbook
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import inch
+from reportlab.pdfgen import canvas
+from django.http import HttpResponse
+from PIL import Image
+import tempfile
+from pdf2docx import Converter
+from docx import Document
+from docx.shared import Inches
+from .Tool.Code_scriping_Tool import get_image_url
 
-from django.http import JsonResponse
-from agora_token_builder import RtcTokenBuilder
-from django.contrib.auth.decorators import login_required
-from django.views.decorators.csrf import csrf_exempt
-from ..models import Faculty_details, Users, Room, Message, RoomMember, Gallery, Student, Department
-from django.contrib.auth.models import User
-from django.shortcuts import render, redirect
-from django.http import JsonResponse
-from .Tool.blogTool import get_images
-from .Tool.Tools import student_detials, staff_detials
-from base import models as TMODEL
-from base import models as SMODEL
-from base import models
-from .study import is_admin
-from django.contrib.auth.decorators import login_required, user_passes_test
+from django.shortcuts import render
+from .Tool.Code_scriping_Tool import get_stackoverflow_link,get_stackoverflow_link_1, get_example_code_gfg, get_answer_from_given_link
 
 
-def student_home(request):
-    usr_id = request.user.id
-    usr_obj = User.objects.get(id=usr_id)
-    std_data = Student.objects.get(user=usr_obj)
-    usr = Users.objects.get(user_name=usr_obj.username)
-    print(std_data)
-    department = Department.objects.all()
+def Common_toolHome(request):
+    return render(request, "Common_Page_Tools/Common_tool.html")
+
+
+def Common_base(request):
+    return render(request, "Common_Page_Tools/Common_base.html")
+
+
+def Common_Code_scriping(request):
+    context = {}
+    if request.method == 'POST':
+        question = request.POST.get('question')
+        if question:
+            # Get the Stack Overflow link for the question
+            link = get_stackoverflow_link_1(question)
+            link_gfg = get_stackoverflow_link_1(question, 'geeksforgeeks.org')
+            if link:
+                # Get the example code from the link
+                code = get_answer_from_given_link(link)
+                code_gfg = get_example_code_gfg(link_gfg)
+                if code:
+                    # Add the question, link and code to the context
+                    context['question_s'] = question
+                    context['link_s'] = link
+                    context['code_s'] = code
+                else:
+                    context['error'] = 'No example code found for the given question'
+                if code_gfg:
+                    # Add the question, link and code to the context
+                    context['question_gfg'] = question
+                    context['link_gfg'] = link
+                    context['code_gfg'] = code_gfg
+            else:
+                context['error'] = 'No Stack Overflow link found for the given question'
+        else:
+            context['error'] = 'Please enter a question'
+    return render(request, 'Common_Page_Tools/CodeScriping.html', context)
+
+
+def Common_calculator(request):
+    return render(request, 'Common_Page_Tools/calculator.html')
+
+
+def Common_translate_(request):
+    text = request.POST.get('text')
+    source_lang = request.POST.get('source_lang')
+    target_lang = request.POST.get('target_lang')
+    print(source_lang, target_lang)
+    try:
+        translator = Translator()
+        translation = translator.translate(
+            text, src=source_lang, dest=target_lang)
+    except:
+        translation = ""
     context = {
-        'total_student': SMODEL.Student.objects.all().count(),
-        'total_teacher': TMODEL.Teacher.objects.all().filter(status=True).count(),
-        'total_course': models.Course.objects.all().count(),
-        'user_name': usr_obj.username, 'detials': std_data, 'User': usr, 'std': std_data,
-        'department':department
+        'text': text,
+        'src_lang': source_lang,
+        'dest_lang': target_lang,
+        'translation': translation,
+        'LANGUAGES': LANGUAGES
     }
-    return render(request, "home/index.html", student_detials(request, 'Student home', context))
+    return render(request, 'Common_Page_Tools/translate.html', context)
 
 
-@login_required()
-def staff_home(request):
-    usr_id = request.user.id
-    usr_obj = User.objects.get(id=usr_id)
-    name = Users.objects.get(user_name=usr_obj.username)
-    faculty_details = Faculty_details.objects.get(user_name=name.user_name)
-    department = Department.objects.all()
-    context = {
-        'total_student': SMODEL.Student.objects.all().count(),
-        'total_teacher': TMODEL.Teacher.objects.filter(status=True,role="staff").count(),
-        'total_course': models.NoteCourse.objects.all().count(),
-        'user_name': usr_obj.username, 'detials': faculty_details,
-        'name_s': faculty_details.name.split(' '),
-        'rolenum':name.role,
-        'department':department
-    }
-    print(name.role)
-    return render(request, "home/staff.html", staff_detials(request,'Home',context))
+def Common_convert_text(request):
+    if request.method == 'POST':
+        filename = os.path.join(
+            BASE_DIR, "generated_files/audio_files/output.mp3")
+        try:
+            os.remove(filename)
+        except:
+            pass
+        text = request.POST['text']
+        language = detect(text)
+        tts = gTTS(text=text, lang=language)
+        tts.save(filename)
+        with open(filename, 'rb') as f:
+            response = HttpResponse(f.read(), content_type='audio/mpeg')
+            response['Content-Disposition'] = 'attachment; filename="output.mp3"'
+            return response
+    return render(request, 'Common_Page_Tools/text_to_audio.html')
 
 
-# Video Chat.....
-def lobby(request):
-    return render(request, 'base/lobby.html', student_detials(request, 'Conference'))
+def Common_wikipedia_summary(request):
+    if request.method == 'POST':
+        keyword = request.POST.get('keyword')
+        sentence = request.POST.get('sentence')
 
-
-def staff_lobby(request):
-    return render(request, 'base/staff_lobby.html', staff_detials(request, 'Conference'))
-
-
-def admin_lobby(request):
-    return render(request, 'base/admin_lobby.html')
-
-
-def video_chat_room(request):
-    return render(request, 'base/room.html')
-
-
-def getToken(request):
-    appId = "6c195af2970e48579689b47d0debf9ca"
-    appCertificate = "acb5f43b05c74985aec64f691cf4311c"
-    channelName = request.GET.get('channel')
-    uid = random.randint(1, 230)
-    expirationTimeInSeconds = 3600
-    currentTimeStamp = int(time.time())
-    privilegeExpiredTs = currentTimeStamp + expirationTimeInSeconds
-    role = 1
-
-    token = RtcTokenBuilder.buildTokenWithUid(
-        appId, appCertificate, channelName, uid, role, privilegeExpiredTs)
-
-    return JsonResponse({'token': token, 'uid': uid}, safe=False)
-
-
-@csrf_exempt
-def createMember(request):
-    data = json.loads(request.body)
-    member, created = RoomMember.objects.get_or_create(
-        name=data['name'],
-        uid=data['UID'],
-        room_name=data['room_name']
-    )
-
-    return JsonResponse({'name': data['name']}, safe=False)
-
-
-def getMember(request):
-    uid = request.GET.get('UID')
-    room_name = request.GET.get('room_name')
-
-    member = RoomMember.objects.get(
-        uid=uid,
-        room_name=room_name,
-    )
-    name = member.name
-    return JsonResponse({'name': member.name}, safe=False)
-
-
-@csrf_exempt
-def deleteMember(request):
-    data = json.loads(request.body)
-    member = RoomMember.objects.get(
-        name=data['name'],
-        uid=data['UID'],
-        room_name=data['room_name']
-    )
-    member.delete()
-    return JsonResponse('Member deleted', safe=False)
-
-
-# ....... room chating
-
-
-def chat_home(request):
-    return render(request, 'chat_room/home.html', student_detials(request, 'Chat Home'))
-
-
-def staff_chat_home(request):
-    return render(request, 'chat_room/staff_home.html', staff_detials(request, 'Chat Home'))
-
-
-def admin_chat_home(request):
-    return render(request, 'chat_room/admin_home.html', staff_detials(request,'Chat Room'))
-
-
-def admin_chat_room(request, room):
-    username = request.GET.get('username')
-    room_details = Room.objects.get(name=room)
-    return render(request, 'chat_room/admin_room.html', staff_detials(request,'Chat Room',{
-        'page': 'Chat - '+str(room),
-        'username': username,
-        'room': room,
-        'room_details': room_details,
-    }))
-
-
-def staff_chat_room(request, room):
-    username = request.GET.get('username')
-    room_details = Room.objects.get(name=room)
-    return render(request, 'chat_room/home_room.html', staff_detials(request, 'Chat - '+str(room), {
-
-        'username': username,
-        'room': room,
-        'room_details': room_details,
-    }))
-
-
-def chat_room(request, room):
-    username = request.GET.get('username')
-    room_details = Room.objects.get(name=room)
-    return render(request, 'chat_room/room.html', student_detials(request, 'Chat - '+str(room), {
-
-        'username': username,
-        'room': room,
-        'room_details': room_details,
-    }))
-
-
-def staff_chat_room(request, room):
-    username = request.GET.get('username')
-    room_details = Room.objects.get(name=room)
-    return render(request, 'chat_room/staff_room.html', staff_detials(request, 'Chat - '+str(room), {
-
-        'username': username,
-        'room': room,
-        'room_details': room_details,
-    }))
-
-
-def checkview(request):
-    room = request.POST['room_name']
-    username = request.POST['username']
-
-    if Room.objects.filter(name=room).exists():
-        return redirect('/chat'+'/'+room+'/?username='+username)
+        try:
+            summary = wikipedia.summary(keyword, sentences=sentence)
+            if request.POST.get('action') == 'view':
+                return render(request, 'Common_Page_Tools/wikipedia_summary.html', {"summary": summary})
+            elif request.POST.get('action') == 'download':
+                response = HttpResponse(summary, content_type='text/plain')
+                response['Content-Disposition'] = f'attachment; filename="{keyword}.txt"'
+                return response
+        except wikipedia.exceptions.PageError:
+            return HttpResponse("Page not found!")
+        except wikipedia.exceptions.DisambiguationError as e:
+            return HttpResponse("Disambiguation Error!")
     else:
-        new_room = Room.objects.create(name=room)
-        new_room.save()
-        return redirect('/chat'+'/'+room+'/?username='+username)
+        return render(request, 'Common_Page_Tools/wikipedia_summary.html')
 
 
-def staff_checkview(request):
-    room = request.POST['room_name']
-    username = request.POST['username']
-
-    if Room.objects.filter(name=room).exists():
-        return redirect('/staffchat'+'/'+room+'/?username='+username)
+def Common_convert_docx_to_pdf(request):
+    if request.method == 'POST' and request.FILES['docx_file']:
+        docx_file = request.FILES['docx_file']
+        filename = docx_file.name
+        with open(filename, 'wb+') as f:
+            for chunk in docx_file.chunks():
+                f.write(chunk)
+        convert(filename)
+        name_without_extension = os.path.splitext(filename)[0]
+        pdf_path = name_without_extension + '.pdf'
+        docx_path = name_without_extension + '.docx'
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{pdf_path}"'
+        with open(pdf_path, 'rb') as f:
+            response.write(f.read())
+        os.remove(pdf_path)
+        os.remove(docx_path)
+        return response
     else:
-        new_room = Room.objects.create(name=room)
-        new_room.save()
-        return redirect('/staffchat'+'/'+room+'/?username='+username)
+        return render(request, 'Common_Page_Tools/convert_docx_to_pdf.html')
 
 
-def admin_checkview(request):
-    room = request.POST['room_name']
-    username = request.POST['username']
+def Common_convert_pdf_to_docx(request):
+    if request.method == 'POST' and request.FILES['pdf_file']:
+        pdf_file = request.FILES['pdf_file']
+        filename = default_storage.save('tmp/' + pdf_file.name, pdf_file)
 
-    if Room.objects.filter(name=room).exists():
-        return redirect('/adminchat'+'/'+room+'/?username='+username)
+        # Convert the PDF file to DOCX format
+        docx_file = io.BytesIO()
+        pdf_path = default_storage.path(filename)
+        docx_path = default_storage.path(filename + '.docx')
+        cv = Converter(pdf_path)
+        cv.convert(docx_path, start=0, end=None)
+        cv.close()
+
+        # Read the converted DOCX file
+        with default_storage.open(docx_path, 'rb') as f:
+            docx_data = f.read()
+
+        response = HttpResponse(docx_data, content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        response['Content-Disposition'] = 'attachment; filename=' + pdf_file.name.split('.')[0] + '.docx'
+
+        # Clean up the temporary files
+        default_storage.delete(filename)
+        default_storage.delete(docx_path)
+
+        return response
+
+    return render(request, 'Common_Page_Tools/convert_pdf_to_docx.html')
+
+def Common_convert_pdf_to_excel(request):
+    if request.method == 'POST' and request.FILES['pdf_file']:
+        
+        # get the uploaded PDF file
+        pdf_file = request.FILES['pdf_file']
+        # convert the PDF file into a list of lists
+        tables = tabula.read_pdf(pdf_file, pages='all', multiple_tables=True)
+        # convert the list of lists into a DataFrame
+        df = pd.DataFrame(tables[0])
+        # save the DataFrame as an Excel file
+        df.to_excel('output.xlsx', index=False)
+        # send the Excel file to the user for download
+        with open('output.xlsx', 'rb') as excel_file:
+            response = HttpResponse(
+                excel_file.read(), content_type='application/vnd.ms-excel')
+            response['Content-Disposition'] = 'attachment; filename=output.xlsx'
+            return response
     else:
-        new_room = Room.objects.create(name=room)
-        new_room.save()
-        return redirect('/adminchat'+'/'+room+'/?username='+username)
+        return render(request, 'Common_Page_Tools/convert_pdf_to_excel.html')
 
 
-def Ncheckview(request):
-    room = request.GET['room_name']
-    username = request.GET['username']
+def Common_convert_excel_to_pdf(request):
+        if request.method == 'POST' and request.FILES.get('pdf_file'):
+            pdf_file = request.FILES['pdf_file']
+            pdf_reader = PdfFileReader(pdf_file)
+            pdf_text = ""
 
-    if Room.objects.filter(name=room).exists():
-        return redirect('/chat'+'/'+room+'/?username='+username)
+            for page_num in range(pdf_reader.numPages):
+                page = pdf_reader.getPage(page_num)
+                pdf_text += page.extractText()
+
+            response = HttpResponse(pdf_text, content_type='text/plain')
+            response['Content-Disposition'] = 'attachment; filename="output.txt"'
+            return response
+
+        return render(request, 'Common_Page_Tools/convert_excel_to_pdf.html')
+
+
+def Common_convert_images_to_pdf(images):
+    filename = tempfile.mktemp(".pdf")
+    c = canvas.Canvas(filename)
+    for image in images:
+        img = Image.open(image)
+        width, height = img.size
+        c.setPageSize((width, height))
+        c.drawImage(image, 0, 0, width, height)
+        c.showPage()
+        img.close()
+    c.save()
+    return filename
+
+
+def Common_convert_jpg_to_pdf(request):
+    if request.method == 'POST':
+        files = request.FILES.getlist('file')
+        if len(files) == 0:
+            return HttpResponse("No images selected")
+        temp_dir = tempfile.mkdtemp()
+        for f in files:
+            with open(os.path.join(temp_dir, f.name), 'wb+') as destination:
+                for chunk in f.chunks():
+                    destination.write(chunk)
+
+        # Convert images to PDF
+        pdf_file = Common_convert_images_to_pdf(
+            [os.path.join(temp_dir, f.name) for f in files])
+
+        # Serve the PDF file for download
+        with open(pdf_file, 'rb') as f:
+            response = HttpResponse(f.read(), content_type='application/pdf')
+            response['Content-Disposition'] = 'attachment; filename=converted.pdf'
+            return response
+
+        # Delete temporary files
+
+    return render(request, 'Common_Page_Tools/convert_jpg_to_pdf.html')
+
+
+def Common_convert_jpg_to_word(request):
+    if request.method == 'POST' and request.FILES['files']:
+        # Get the uploaded images
+        images = request.FILES.getlist('files')
+
+        # Create a new Word document
+        document = Document()
+
+        # Loop through the images and add them to the document
+        for img in images:
+            # Open the image and convert it to a stream
+            image = Image.open(img)
+            stream = io.BytesIO()
+            image.save(stream, format='png')
+            stream.seek(0)
+
+            # Add the image to the document
+            document.add_picture(stream, width=Inches(6))
+
+        # Save the document
+        filename = 'images.docx'
+        document.save(filename)
+
+        # Download the document
+        with open(filename, 'rb') as f:
+            response = HttpResponse(f.read(
+            ), content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+            response['Content-Disposition'] = 'attachment; filename={}'.format(
+                filename)
+            return response
+
+    return render(request, 'Common_Page_Tools/convert_jpg_to_word.html')
+
+
+def Common_cgpa_calculator(request):
+    if request.method == 'POST':
+        total_credits = 0
+        total_weighted_points = 0
+        for i in range(1, 9):  # Assuming a maximum of 8 subjects
+            credit_field = 'credit' + str(i)
+            grade_field = 'grade' + str(i)
+            credits = int(request.POST.get(credit_field, 0))
+            grade_points = get_grade_points(request.POST.get(grade_field, ''))
+            total_credits += credits
+            total_weighted_points += credits * grade_points
+        try:
+            cgpa = round(total_weighted_points / total_credits, 2)
+            context = {'cgpa': cgpa, 'len': [i for i in range(1, 10)]}
+        except:
+            context = {'cgpa': 'cgpa', 'len': [i for i in range(1, 10)]}
+            print("error/...")
+        return render(request, 'Common_Page_Tools/cgpa_calculator.html', context)
     else:
-        new_room = Room.objects.create(name=room)
-        new_room.save()
-        return redirect('/chat'+'/'+room+'/?username='+username)
+        return render(request, 'Common_Page_Tools/cgpa_calculator.html', context)
 
 
-def send(request):
-    message = request.POST['message']
-    username = request.POST['username']
-    room_id = request.POST['room_id']
-    print(message, username, room_id)
-    new_message = Message.objects.create(
-        value=message, user=username, room=room_id)
-    new_message.save()
-    return JsonResponse({'msg':'sucess'})
+def Common_get_grade_points(grade):
+    if grade == 'S':
+        return 10
+    elif grade == 'A':
+        return 9
+    elif grade == 'B':
+        return 8
+    elif grade == 'C':
+        return 7
+    elif grade == 'D':
+        return 6
+    elif grade == 'E':
+        return 5
+    else:
+        return 0
 
 
-def getMessages(request,  room):
-    room_details = Room.objects.get(name=room)
-    messages = Message.objects.filter(room=room_details.id)
-    return JsonResponse({"messages": list(messages.values())})
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 
-def chatgetMessages(request,  room):
-    room_details = Room.objects.get(name=room)
-    messages = Message.objects.filter(room=room_details.id)
-    return JsonResponse({"messages": list(messages.values())})
+def Common_get_subject(request):
+    if request.method == 'POST':
+        num = request.POST.get('number')
+        print(type(int(num)))
+        return render(request, 'Common_Page_Tools/gpa_calculator.html', {'num_sub': [i for i in range(1, int(num)+1)]})
+
+    return render(request, 'Common_Page_Tools/num_of_sub.html')
 
 
-# ...............gallery.......................................
-def gallery(request):
-    item = get_images()
-    return render(request, "Gallery/gallery.html", {"categories": item[0], "images": item[1]})
-# ............................................................
-# upload image...............................................
+def Common_gpa_calculator(request):
+    credits = request.POST.getlist('credits')
+    grades = request.POST.getlist('grades')
+
+    total_credits = sum(map(int, credits))
+    total_grade_points = 0
+
+    for i in range(len(credits)):
+        grade_point = 0
+        if grades[i] == 'A+':
+            grade_point = 4.0
+        elif grades[i] == 'A':
+            grade_point = 4.0
+        elif grades[i] == 'A-':
+            grade_point = 3.7
+        elif grades[i] == 'B+':
+            grade_point = 3.3
+        elif grades[i] == 'B':
+            grade_point = 3.0
+        elif grades[i] == 'B-':
+            grade_point = 2.7
+        elif grades[i] == 'C+':
+            grade_point = 2.3
+        elif grades[i] == 'C':
+            grade_point = 2.0
+        elif grades[i] == 'C-':
+            grade_point = 1.7
+        elif grades[i] == 'D+':
+            grade_point = 1.3
+        elif grades[i] == 'D':
+            grade_point = 1.0
+        elif grades[i] == 'F':
+            grade_point = 0.0
+        total_grade_points += int(credits[i]) * grade_point
+    try:
+        gpa = total_grade_points / total_credits
+    except:
+        gpa = 0.0
+    context = {'gpa': round(gpa, 2)}
+    return render(request, 'Common_Page_Tools/gpa_calculator.html', context)
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 
-def upload_image(request):
-    categories = request.POST.get("Category")
-    image = request.FILES["image_file"]
-    update = Gallery(image=image, categories=categories)
-    update.save()
-    return render(request, "about_us/team.html")
+def Common_handwriting_converter(request):
+    if request.method == 'POST':
+        # Get input text from form
+        input_text = request.POST.get('input_text')
+
+        # Create a filename for the image
+        filename = 'handwriting.png'
+
+        # Generate image using Pywhatkit
+        kit.text_to_handwriting(input_text, os.path.join(
+            settings.MEDIA_ROOT, filename))
+
+        # Open image file
+        with open(os.path.join(settings.MEDIA_ROOT, filename), 'rb') as f:
+            response = HttpResponse(f.read(), content_type="image/png")
+            response['Content-Disposition'] = 'attachment; filename=' + filename
+            return response
+    else:
+        return render(request, 'Common_Page_Tools/handwriting.html')
 
 
-def delete_image(request):
-    id = request.POST.get("id")
-    image = Gallery.objects.get(G_id=id)
-    image.delete()
-    return render(request, "about_us/team.html")
-# ..............................................................
+def Common_keyword_to_image(request):
+    if request.method == 'POST':
+        keyword = request.POST.get('keyword')
+        urls = get_image_url(keyword)
+        print(keyword, urls)
+        return render(request, 'Common_Page_Tools/keyword_to_image.html', {'image_urls': urls})
+    return render(request, 'Common_Page_Tools/keyword_to_image.html')
 
-@user_passes_test(is_admin)
-def image_upload_page_gallery(request):
-    item = get_images()
-    return render(request, "Gallery/upload_image.html", staff_detials(request,'Manage Gallery',{"categories": item[0], "images": item[1]}))
+# views.py
+
+
+def Common_video_meeting(request):
+    return render(request, 'Common_Page_Tools/video_meeting.html')
+
+
+def Common_Common_tool(request):
+    return render(request, "Common_Page_Tools/Common_tool.html")
